@@ -52,3 +52,18 @@ compile_commands.json
 *creator.user*
 
 *_qmlcache.qrc
+
+# Build directories
+debug/
+release/
+build/
+bin/
+obj/
+
+# IDE files
+.vs/
+.vscode/
+*.user
+
+# Keep screenshots folder
+!screenshots/

@@ -11,20 +11,20 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Live Captions Controller</string>
+   <string>Live Captions Controller - Professional Edition</string>
   </property>
   <widget class="QWidget" name="centralWidget">
    <layout class="QVBoxLayout" name="verticalLayout">
     <item>
      <widget class="QLabel" name="titleLabel">
       <property name="text">
-       <string>Live Captions Controller</string>
+       <string>Windows 11 Live Captions Controller</string>
       </property>
       <property name="alignment">
        <set>Qt::AlignCenter</set>
       </property>
       <property name="styleSheet">
-       <string notr="true">font-size: 18px; font-weight: bold; padding: 10px;</string>
+       <string notr="true">font-size: 20px; font-weight: bold; padding: 15px; background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2196F3, stop:1 #21CBF3); color: white; border-radius: 5px;</string>
       </property>
      </widget>
     </item>
@@ -35,33 +35,23 @@
       </property>
       <layout class="QGridLayout" name="gridLayout">
        <item row="0" column="0">
-        <widget class="QLabel" name="languageLabel">
+        <widget class="QLabel" name="positionLabel">
          <property name="text">
-          <string>Language:</string>
+          <string>Caption Position:</string>
          </property>
         </widget>
        </item>
        <item row="0" column="1">
-        <widget class="QComboBox" name="languageCombo"/>
+        <widget class="QComboBox" name="positionCombo"/>
        </item>
        <item row="1" column="0">
-        <widget class="QLabel" name="positionLabel">
+        <widget class="QLabel" name="opacityLabel">
          <property name="text">
-          <string>Position:</string>
+          <string>Opacity: 100%</string>
          </property>
         </widget>
        </item>
        <item row="1" column="1">
-        <widget class="QComboBox" name="positionCombo"/>
-       </item>
-       <item row="2" column="0">
-        <widget class="QLabel" name="opacityLabel">
-         <property name="text">
-          <string>Opacity: 80%</string>
-         </property>
-        </widget>
-       </item>
-       <item row="2" column="1">
         <widget class="QSlider" name="opacitySlider">
          <property name="minimum">
           <number>10</number>
@@ -74,23 +64,43 @@
          </property>
         </widget>
        </item>
-       <item row="3" column="0">
+       <item row="2" column="0">
         <widget class="QPushButton" name="startButton">
          <property name="text">
-          <string>Start Live Captions</string>
+          <string>Start Monitoring</string>
          </property>
          <property name="styleSheet">
-          <string notr="true">padding: 5px; font-weight: bold;</string>
+          <string notr="true">padding: 8px; font-weight: bold; background-color: #4CAF50; color: white;</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="1">
+        <widget class="QPushButton" name="stopButton">
+         <property name="text">
+          <string>Stop Monitoring</string>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">padding: 8px; font-weight: bold; background-color: #f44336; color: white;</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QPushButton" name="openSettingsButton">
+         <property name="text">
+          <string>Open Windows Settings</string>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">padding: 5px;</string>
          </property>
         </widget>
        </item>
        <item row="3" column="1">
-        <widget class="QPushButton" name="stopButton">
+        <widget class="QPushButton" name="clearButton">
          <property name="text">
-          <string>Stop Live Captions</string>
+          <string>Clear History</string>
          </property>
          <property name="styleSheet">
-          <string notr="true">padding: 5px; font-weight: bold;</string>
+          <string notr="true">padding: 5px;</string>
          </property>
         </widget>
        </item>
@@ -106,7 +116,10 @@
        <item>
         <widget class="QTextEdit" name="captionDisplay">
          <property name="styleSheet">
-          <string notr="true">font-family: Consolas, monospace; font-size: 12px;</string>
+          <string notr="true">font-family: 'Segoe UI', Arial; font-size: 13px; padding: 10px; background-color: #f5f5f5; border: 1px solid #ddd;</string>
+         </property>
+         <property name="placeholderText">
+          <string>Caption text will appear here when monitoring is active...</string>
          </property>
         </widget>
        </item>
@@ -116,10 +129,10 @@
     <item>
      <widget class="QLabel" name="statusLabel">
       <property name="text">
-       <string>Ready to start</string>
+       <string>Ready - Click 'Start Monitoring' to begin</string>
       </property>
       <property name="styleSheet">
-       <string notr="true">padding: 5px; background-color: #f0f0f0; border: 1px solid #ccc;</string>
+       <string notr="true">padding: 8px; background-color: #e3f2fd; border: 2px solid #2196F3; border-radius: 3px; font-weight: bold;</string>
       </property>
       <property name="alignment">
        <set>Qt::AlignCenter</set>
