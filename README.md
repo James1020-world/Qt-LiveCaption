@@ -49,7 +49,7 @@ A professional Qt/C++ desktop application that interfaces with Windows 11 Live C
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/yourusername/Qt-LiveCaption.git
+git clone https://github.com/James1020-world/Qt-LiveCaption.git
 cd Qt-LiveCaption
 ```
 
