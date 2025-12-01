@@ -9,6 +9,7 @@
 #include <QProcess>
 #include <QTimer>
 #include <windows.h>
+#include <UIAutomation.h>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -25,30 +26,31 @@ public:
 private slots:
     void on_startButton_clicked();
     void on_stopButton_clicked();
-    void on_languageCombo_currentIndexChanged(int index);
     void on_positionCombo_currentIndexChanged(int index);
     void on_opacitySlider_valueChanged(int value);
     void on_captureTimer_timeout();
-    void readLiveCaptionsOutput();
+    void on_openSettingsButton_clicked();
+    void on_clearButton_clicked();
 
 private:
     Ui::MainWindow *ui;
     
     void setupUI();
     void setupConnections();
-    bool findLiveCaptionsPath();
-    void startLiveCaptionsProcess();
-    void stopLiveCaptionsProcess();
+    void launchLiveCaptions();
+    void closeLiveCaptions();
     void captureCaptionWindow();
-    QString getWindowText(HWND hwnd);
+    QString getCaptionTextViaUIA();
+    HWND findLiveCaptionsWindow();
+    bool isLiveCaptionsRunning();
+    void updateCaptionDisplay(const QString &text);
     
-    QProcess *m_liveCaptionsProcess;
     QTimer *m_captureTimer;
-    QString m_liveCaptionsPath;
     HWND m_captionWindow;
     bool m_isRunning;
+    QString m_lastCaptionText;
     
-    // Language codes for Live Captions
-    QMap<QString, QString> m_languageMap;
+    IUIAutomation *m_automation;
+    IUIAutomationElement *m_captionElement;
 };
 #endif // MAINWINDOW_H

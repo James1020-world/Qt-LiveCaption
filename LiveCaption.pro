@@ -6,7 +6,7 @@ TARGET = LiveCaption
 TEMPLATE = app
 
 win32 {
-    LIBS += -luser32 -lole32 -loleaut32
+    LIBS += -luser32 -lole32 -loleaut32 -luuid
     QMAKE_CXXFLAGS += /std:c++17
 }
 
@@ -19,3 +19,5 @@ HEADERS += \
 
 FORMS += \
     mainwindow.ui
+
+DEFINES += UNICODE _UNICODE

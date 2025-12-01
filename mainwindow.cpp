@@ -2,194 +2,221 @@
 #include "ui_mainwindow.h"
 #include <QScreen>
 #include <QApplication>
-#include <QDesktopWidget>
 #include <QMessageBox>
-#include <QDir>
 #include <QDebug>
+#include <QDateTime>
 #include <windows.h>
-#include <psapi.h>
+#include <tlhelp32.h>
+#include <comdef.h>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
-    , m_liveCaptionsProcess(nullptr)
     , m_captureTimer(nullptr)
     , m_captionWindow(nullptr)
     , m_isRunning(false)
+    , m_automation(nullptr)
+    , m_captionElement(nullptr)
 {
     ui->setupUi(this);
     setupUI();
     setupConnections();
     
-    // Initialize language mapping
-    m_languageMap["English"] = "en-US";
-    m_languageMap["Spanish"] = "es-ES";
-    m_languageMap["French"] = "fr-FR";
-    m_languageMap["German"] = "de-DE";
-    m_languageMap["Japanese"] = "ja-JP";
-    m_languageMap["Chinese"] = "zh-CN";
-    m_languageMap["Korean"] = "ko-KR";
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    HRESULT hr = CoCreateInstance(__uuidof(CUIAutomation), nullptr, 
+                                  CLSCTX_INPROC_SERVER, __uuidof(IUIAutomation), 
+                                  (void**)&m_automation);
     
-    // Find Live Captions executable
-    if (!findLiveCaptionsPath()) {
-        QMessageBox::warning(this, "Warning", 
-            "LiveCaptions.exe not found. Some features may not work properly.");
+    if (FAILED(hr)) {
+        qWarning() << "Failed to initialize UI Automation";
+    }
+    
+    if (isLiveCaptionsRunning()) {
+        ui->statusLabel->setText("Live Captions is already running");
+        ui->startButton->setText("Connect to Live Captions");
     }
 }
 
 MainWindow::~MainWindow()
 {
-    stopLiveCaptionsProcess();
+    if (m_captureTimer) {
+        m_captureTimer->stop();
+    }
+    
+    if (m_captionElement) {
+        m_captionElement->Release();
+    }
+    
+    if (m_automation) {
+        m_automation->Release();
+    }
+    
+    CoUninitialize();
     delete ui;
 }
 
 void MainWindow::setupUI()
 {
-    setWindowTitle("Live Captions Controller - Qt Demo");
+    setWindowTitle("Live Captions Controller - Professional Edition");
     setMinimumSize(800, 600);
     
-    // Populate language combo
-    ui->languageCombo->addItems(m_languageMap.keys());
+    ui->positionCombo->addItem("Bottom Center (Default)", 0);
+    ui->positionCombo->addItem("Top Center", 1);
+    ui->positionCombo->addItem("Bottom Left", 2);
+    ui->positionCombo->addItem("Bottom Right", 3);
     
-    // Populate position combo
-    ui->positionCombo->addItem("Top Left", 1);
-    ui->positionCombo->addItem("Top Right", 2);
-    ui->positionCombo->addItem("Bottom Left", 3);
-    ui->positionCombo->addItem("Bottom Right", 4);
-    ui->positionCombo->addItem("Center Top", 5);
-    ui->positionCombo->addItem("Center Bottom", 6);
-    
-    // Set initial values
-    ui->opacitySlider->setValue(80);
+    ui->opacitySlider->setValue(100);
     ui->stopButton->setEnabled(false);
+    
+    ui->captionDisplay->setReadOnly(true);
 }
 
 void MainWindow::setupConnections()
 {
     connect(ui->startButton, &QPushButton::clicked, this, &MainWindow::on_startButton_clicked);
     connect(ui->stopButton, &QPushButton::clicked, this, &MainWindow::on_stopButton_clicked);
-    connect(ui->languageCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), 
-            this, &MainWindow::on_languageCombo_currentIndexChanged);
     connect(ui->positionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), 
             this, &MainWindow::on_positionCombo_currentIndexChanged);
     connect(ui->opacitySlider, &QSlider::valueChanged, 
             this, &MainWindow::on_opacitySlider_valueChanged);
+    connect(ui->openSettingsButton, &QPushButton::clicked, this, &MainWindow::on_openSettingsButton_clicked);
+    connect(ui->clearButton, &QPushButton::clicked, this, &MainWindow::on_clearButton_clicked);
 }
 
-bool MainWindow::findLiveCaptionsPath()
+bool MainWindow::isLiveCaptionsRunning()
 {
-    // Common paths where LiveCaptions.exe might be located
-    QStringList possiblePaths = {
-        "C:/Windows/System32/LiveCaptions.exe",
-        "C:/Windows/SysWOW64/LiveCaptions.exe",
-        QDir::homePath() + "/AppData/Local/Microsoft/WindowsApps/LiveCaptions.exe",
-        "C:/Program Files/WindowsApps/Microsoft.Windows.LiveCaptions_*/LiveCaptions.exe"
-    };
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        return false;
+    }
     
-    for (const QString &path : possiblePaths) {
-        if (QFile::exists(path)) {
-            m_liveCaptionsPath = path;
-            qDebug() << "Found LiveCaptions.exe at:" << path;
-            return true;
+    PROCESSENTRY32W processEntry;
+    processEntry.dwSize = sizeof(PROCESSENTRY32W);
+    
+    bool found = false;
+    if (Process32FirstW(snapshot, &processEntry)) {
+        do {
+            QString processName = QString::fromWCharArray(processEntry.szExeFile);
+            if (processName.contains("LiveCaptions", Qt::CaseInsensitive)) {
+                found = true;
+                break;
+            }
+        } while (Process32NextW(snapshot, &processEntry));
+    }
+    
+    CloseHandle(snapshot);
+    return found;
+}
+
+HWND MainWindow::findLiveCaptionsWindow()
+{
+    HWND hwnd = FindWindowW(nullptr, L"Live Captions");
+    if (!hwnd) {
+        hwnd = FindWindowW(nullptr, L"Live captions");
+    }
+    if (!hwnd) {
+        hwnd = FindWindowW(L"Windows.UI.Core.CoreWindow", nullptr);
+        if (hwnd) {
+            wchar_t title[256];
+            GetWindowTextW(hwnd, title, 256);
+            QString titleStr = QString::fromWCharArray(title);
+            if (!titleStr.contains("caption", Qt::CaseInsensitive)) {
+                hwnd = nullptr;
+            }
         }
     }
-    
-    // Try to find in WindowsApps (might require wildcard expansion)
-    QDir windowsAppsDir(QDir::homePath() + "/AppData/Local/Microsoft/WindowsApps");
-    if (windowsAppsDir.exists("LiveCaptions.exe")) {
-        m_liveCaptionsPath = windowsAppsDir.absoluteFilePath("LiveCaptions.exe");
-        return true;
-    }
-    
-    return false;
+    return hwnd;
 }
 
 void MainWindow::on_startButton_clicked()
-{
-    startLiveCaptionsProcess();
-}
-
-void MainWindow::on_stopButton_clicked()
-{
-    stopLiveCaptionsProcess();
-}
-
-void MainWindow::startLiveCaptionsProcess()
 {
     if (m_isRunning) {
         return;
     }
     
-    if (m_liveCaptionsPath.isEmpty() && !findLiveCaptionsPath()) {
-        QMessageBox::critical(this, "Error", "Could not find LiveCaptions.exe");
-        return;
-    }
-    
-    // Kill any existing Live Captions process
-    stopLiveCaptionsProcess();
-    
-    // Start new process
-    m_liveCaptionsProcess = new QProcess(this);
-    m_liveCaptionsProcess->setProgram(m_liveCaptionsPath);
-    
-    // Connect signals
-    connect(m_liveCaptionsProcess, &QProcess::readyReadStandardOutput, 
-            this, &MainWindow::readLiveCaptionsOutput);
-    connect(m_liveCaptionsProcess, &QProcess::readyReadStandardError, 
-            this, &MainWindow::readLiveCaptionsOutput);
-    connect(m_liveCaptionsProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            [this](int exitCode, QProcess::ExitStatus exitStatus) {
-                qDebug() << "LiveCaptions process finished with code:" << exitCode;
-                m_isRunning = false;
-                ui->startButton->setEnabled(true);
-                ui->stopButton->setEnabled(false);
-                if (m_captureTimer) {
-                    m_captureTimer->stop();
-                }
-            });
-    
-    // Start the process
-    m_liveCaptionsProcess->start();
-    
-    if (m_liveCaptionsProcess->waitForStarted(3000)) {
-        m_isRunning = true;
-        ui->startButton->setEnabled(false);
-        ui->stopButton->setEnabled(true);
-        ui->statusLabel->setText("Live Captions Running");
-        
-        // Start timer to capture caption window
-        if (!m_captureTimer) {
-            m_captureTimer = new QTimer(this);
-            connect(m_captureTimer, &QTimer::timeout, this, &MainWindow::on_captureTimer_timeout);
-        }
-        m_captureTimer->start(500); // Check every 500ms
-        
-        qDebug() << "LiveCaptions started successfully";
+    if (isLiveCaptionsRunning()) {
+        ui->statusLabel->setText("Connecting to Live Captions...");
     } else {
-        QMessageBox::critical(this, "Error", "Failed to start LiveCaptions.exe");
-        delete m_liveCaptionsProcess;
-        m_liveCaptionsProcess = nullptr;
+        launchLiveCaptions();
+        ui->statusLabel->setText("Launching Live Captions...");
+        QThread::msleep(2000); // Wait for launch
     }
+    
+    m_isRunning = true;
+    ui->startButton->setEnabled(false);
+    ui->stopButton->setEnabled(true);
+    
+    if (!m_captureTimer) {
+        m_captureTimer = new QTimer(this);
+        connect(m_captureTimer, &QTimer::timeout, this, &MainWindow::on_captureTimer_timeout);
+    }
+    m_captureTimer->start(300); // Check every 300ms for smooth updates
+    
+    ui->statusLabel->setText("Live Captions Active - Monitoring");
 }
 
-void MainWindow::stopLiveCaptionsProcess()
+void MainWindow::on_stopButton_clicked()
 {
-    if (m_liveCaptionsProcess && m_liveCaptionsProcess->state() == QProcess::Running) {
-        m_liveCaptionsProcess->terminate();
-        if (!m_liveCaptionsProcess->waitForFinished(3000)) {
-            m_liveCaptionsProcess->kill();
-        }
-    }
-    
     if (m_captureTimer) {
         m_captureTimer->stop();
     }
     
     m_isRunning = false;
     m_captionWindow = nullptr;
+    
+    if (m_captionElement) {
+        m_captionElement->Release();
+        m_captionElement = nullptr;
+    }
+    
     ui->startButton->setEnabled(true);
     ui->stopButton->setEnabled(false);
-    ui->statusLabel->setText("Live Captions Stopped");
+    ui->statusLabel->setText("Monitoring Stopped (Live Captions still running)");
+    
+    QMessageBox::StandardButton reply = QMessageBox::question(this, "Close Live Captions",
+        "Do you want to close Live Captions application?",
+        QMessageBox::Yes | QMessageBox::No);
+    
+    if (reply == QMessageBox::Yes) {
+        closeLiveCaptions();
+        ui->statusLabel->setText("Live Captions Closed");
+    }
+}
+
+void MainWindow::launchLiveCaptions()
+{
+    QProcess::startDetached("powershell.exe", 
+        QStringList() << "-Command" << "Start-Process" << "ms-settings:easeofaccess-closedcaptioning");
+    
+    ShellExecuteW(nullptr, L"open", L"ms-settings:easeofaccess-closedcaptioning", 
+                  nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+void MainWindow::closeLiveCaptions()
+{
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    
+    PROCESSENTRY32W processEntry;
+    processEntry.dwSize = sizeof(PROCESSENTRY32W);
+    
+    if (Process32FirstW(snapshot, &processEntry)) {
+        do {
+            QString processName = QString::fromWCharArray(processEntry.szExeFile);
+            if (processName.contains("LiveCaptions", Qt::CaseInsensitive)) {
+                HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, processEntry.th32ProcessID);
+                if (hProcess) {
+                    TerminateProcess(hProcess, 0);
+                    CloseHandle(hProcess);
+                }
+                break;
+            }
+        } while (Process32NextW(snapshot, &processEntry));
+    }
+    
+    CloseHandle(snapshot);
 }
 
 void MainWindow::on_captureTimer_timeout()
@@ -201,120 +228,85 @@ void MainWindow::on_captureTimer_timeout()
 
 void MainWindow::captureCaptionWindow()
 {
-    // Find the Live Captions window
     if (!m_captionWindow) {
-        m_captionWindow = FindWindowW(nullptr, L"Live Captions");
-        if (!m_captionWindow) {
-            m_captionWindow = FindWindowW(nullptr, L"Live captions");
-        }
+        m_captionWindow = findLiveCaptionsWindow();
         if (m_captionWindow) {
             qDebug() << "Found Live Captions window";
+            ui->statusLabel->setText("Live Captions Active - Capturing Text");
+        } else {
+            return;
         }
     }
     
-    if (m_captionWindow) {
-        // Get window text (captions)
-        QString captionText = getWindowText(m_captionWindow);
-        if (!captionText.isEmpty() && captionText != ui->captionDisplay->toPlainText()) {
-            ui->captionDisplay->setPlainText(captionText);
-        }
-        
-        // Apply window position and style
-        applyWindowSettings();
+    QString captionText = getCaptionTextViaUIA();
+    
+    if (!captionText.isEmpty()) {
+        updateCaptionDisplay(captionText);
     }
 }
 
-QString MainWindow::getWindowText(HWND hwnd)
+QString MainWindow::getCaptionTextViaUIA()
 {
-    if (!hwnd) return "";
-    
-    // Get text from the main window
-    wchar_t buffer[1024];
-    int length = GetWindowTextW(hwnd, buffer, 1024);
-    
-    if (length > 0) {
-        return QString::fromWCharArray(buffer);
+    if (!m_automation || !m_captionWindow) {
+        return QString();
     }
     
-    // Try to get text from child windows (the actual caption text might be in a child control)
-    HWND child = GetWindow(hwnd, GW_CHILD);
-    while (child) {
-        length = GetWindowTextW(child, buffer, 1024);
-        if (length > 0) {
-            QString text = QString::fromWCharArray(buffer);
-            // Filter out UI text and look for actual captions
-            if (!text.contains("Live Captions") && text.length() > 10) {
-                return text;
+    IUIAutomationElement *rootElement = nullptr;
+    HRESULT hr = m_automation->ElementFromHandle(m_captionWindow, &rootElement);
+    
+    if (FAILED(hr) || !rootElement) {
+        return QString();
+    }
+    
+    BSTR name = nullptr;
+    rootElement->get_CurrentName(&name);
+    
+    QString result;
+    if (name) {
+        result = QString::fromWCharArray(name);
+        SysFreeString(name);
+    }
+    
+    if (result.isEmpty()) {
+        IUIAutomationTextPattern *textPattern = nullptr;
+        hr = rootElement->GetCurrentPatternAs(UIA_TextPatternId, __uuidof(IUIAutomationTextPattern), 
+                                               (void**)&textPattern);
+        if (SUCCEEDED(hr) && textPattern) {
+            IUIAutomationTextRange *textRange = nullptr;
+            hr = textPattern->get_DocumentRange(&textRange);
+            if (SUCCEEDED(hr) && textRange) {
+                BSTR text = nullptr;
+                textRange->GetText(-1, &text);
+                if (text) {
+                    result = QString::fromWCharArray(text);
+                    SysFreeString(text);
+                }
+                textRange->Release();
             }
+            textPattern->Release();
         }
-        child = GetWindow(child, GW_HWNDNEXT);
     }
     
-    return "";
+    rootElement->Release();
+    return result;
 }
 
-void MainWindow::applyWindowSettings()
+void MainWindow::updateCaptionDisplay(const QString &text)
 {
-    if (!m_captionWindow) return;
-    
-    // Get screen dimensions
-    QScreen *screen = QApplication::primaryScreen();
-    QRect screenGeometry = screen->availableGeometry();
-    
-    // Window size (approximate Live Captions window size)
-    int width = 500;
-    int height = 150;
-    
-    // Calculate position based on selection
-    int position = ui->positionCombo->currentData().toInt();
-    int x = 0, y = 0;
-    
-    switch (position) {
-    case 1: // Top Left
-        x = 10;
-        y = 10;
-        break;
-    case 2: // Top Right
-        x = screenGeometry.width() - width - 10;
-        y = 10;
-        break;
-    case 3: // Bottom Left
-        x = 10;
-        y = screenGeometry.height() - height - 50;
-        break;
-    case 4: // Bottom Right
-        x = screenGeometry.width() - width - 10;
-        y = screenGeometry.height() - height - 50;
-        break;
-    case 5: // Center Top
-        x = (screenGeometry.width() - width) / 2;
-        y = 10;
-        break;
-    case 6: // Center Bottom
-        x = (screenGeometry.width() - width) / 2;
-        y = screenGeometry.height() - height - 50;
-        break;
+    if (text == m_lastCaptionText) {
+        return;
     }
     
-    // Set window position
-    SetWindowPos(m_captionWindow, HWND_TOPMOST, x, y, width, height, SWP_SHOWWINDOW);
+    m_lastCaptionText = text;
     
-    // Set opacity
-    int opacity = ui->opacitySlider->value();
-    LONG windowLong = GetWindowLongW(m_captionWindow, GWL_EXSTYLE);
-    SetWindowLongW(m_captionWindow, GWL_EXSTYLE, windowLong | WS_EX_LAYERED);
-    SetLayeredWindowAttributes(m_captionWindow, 0, (255 * opacity) / 100, LWA_ALPHA);
-}
-
-void MainWindow::on_languageCombo_currentIndexChanged(int index)
-{
-    if (!m_isRunning) return;
+    QString timestamp = QDateTime::currentDateTime().toString("hh:mm:ss");
+    QString formattedText = QString("[%1] %2\n").arg(timestamp, text);
     
-    QString language = m_languageMap[ui->languageCombo->currentText()];
-    qDebug() << "Language changed to:" << language;
+    ui->captionDisplay->append(formattedText);
     
-    // Note: Changing language might require restarting Live Captions
-    // or sending specific commands to the process
+    QTextCursor cursor = ui->captionDisplay->textCursor();
+    cursor.movePosition(QTextCursor::End);
+    ui->captionDisplay->setTextCursor(cursor);
 }
 
 void MainWindow::on_positionCombo_currentIndexChanged(int index)
@@ -346,4 +338,28 @@ void MainWindow::readLiveCaptionsOutput()
             qDebug() << "LiveCaptions stderr:" << error;
         }
     }
+}
+void
+ MainWindow::on_positionCombo_currentIndexChanged(int index)
+{
+    Q_UNUSED(index);
+    ui->statusLabel->setText("Position: Change via Windows Settings");
+}
+
+void MainWindow::on_opacitySlider_valueChanged(int value)
+{
+    ui->opacityLabel->setText(QString("Opacity: %1%").arg(value));
+}
+
+void MainWindow::on_openSettingsButton_clicked()
+{
+    ShellExecuteW(nullptr, L"open", L"ms-settings:easeofaccess-closedcaptioning", 
+                  nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+void MainWindow::on_clearButton_clicked()
+{
+    ui->captionDisplay->clear();
+    m_lastCaptionText.clear();
+    ui->statusLabel->setText("Caption history cleared");
 }
